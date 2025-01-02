@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client</title>
+    <style>
+        #messages {
+            border: 1px solid #ddd;
+            padding: 10px;
+            max-height: 80vh; /* Adjusted for better visibility */
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="app-container">
+            <div class="headings-container">
+                <h1>User Text</h1>
+            </div>
+            <div class="interaction-container">
+                <textarea id="textTosend" id="" cols="35" rows="2" class="text-control" placeholder="Enter the Text"></textarea>
+                <p class="error-para"></p>
+                <button class="btn" id="convertBtn">
+                    Click for Response
+                </button>
+            </div>
+        </div>
+    </div>
+    <h1>A2F_Data</h1>
+    <div id="messages">Blendshape data</div>
+    <script type="module">
+        let ws;
+        let messageBuffer = []; // Buffer to store incoming messages
+        let counter =0;
+
+        function connect() {
+            ws = new WebSocket('ws://localhost:5555');
+
+            ws.onopen = () => {
+                console.log('WebSocket connection opened.');
+            };
+
+            ws.onmessage = (event) => {
+                // console.log('Message from server:', event.data);
+                // ws.close();
+                bufferMessage(event.data);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket connection closed. Reconnecting in 1 second...');
+                setTimeout(connect, 1000); 
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function bufferMessage(message) {
+            messageBuffer.push(message); // Add new message to the buffer
+            updateDisplay(); // Update display with buffered messages
+        }
+
+        function updateDisplay() {
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = ''; // Clear the current display
+
+            // Display all messages from the buffer
+            messageBuffer.forEach((message) => {
+                const messageElement = document.createElement('div');
+                messageElement.textContent = message;
+                messagesDiv.appendChild(messageElement);
+            });
+
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to the bottom
+        }
+        // Start connection
+        connect();
+
+         // Sending text logic
+         document.getElementById('convertBtn').addEventListener('click', async () => {
+            const textInput = document.getElementById('textTosend').value.trim();
+            const errorDisplay = document.querySelector('.error-para');
+
+            if (!textInput) {
+                errorDisplay.textContent = "Please enter text.";
+                return;
+            }
+
+            errorDisplay.textContent = ""; // Clear error message
+
+            try {
+                await fetch('http://localhost:2000/send-text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: textInput }),
+                });
+
+                console.log("Text sent successfully to the backend."); 
+            }
+             
+            catch (error) {
+                console.error("Error sending text to the backend:", error);
+                errorDisplay.textContent = "Failed to send text. Please try again.";
+            }
+
+            textTosend.value = "";
+        });
+    </script>
+</body>
+</html>
