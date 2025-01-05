@@ -35,18 +35,25 @@
         let ws;
         let messageBuffer = []; // Buffer to store incoming messages
         let counter =0;
+        let timerStarted = false;
 
         function connect() {
-            ws = new WebSocket('ws://localhost:5555');
+            ws = new WebSocket('https://a2f-back.onrender.com');
 
             ws.onopen = () => {
                 console.log('WebSocket connection opened.');
             };
 
             ws.onmessage = (event) => {
+                if (timerStarted) {
+                    console.timeEnd('Time from send to receive'); // Stop and log the timer
+                    timerStarted = false; // Reset the timer flag
+                }
+                // console.timeEnd('Time to receive data'); // Stop the timer and log the time taken
                 // console.log('Message from server:', event.data);
                 // ws.close();
                 bufferMessage(event.data);
+                // console.time('Time to receive data'); // Restart the timer for the next message
             };
 
             ws.onclose = () => {
@@ -79,6 +86,7 @@
         }
         // Start connection
         connect();
+        // console.time('Time to receive data'); // Start the initial timer
 
          // Sending text logic
          document.getElementById('convertBtn').addEventListener('click', async () => {
@@ -93,7 +101,10 @@
             errorDisplay.textContent = ""; // Clear error message
 
             try {
-                await fetch('http://localhost:2000/send-text', {
+                console.time('Time from send to receive'); // Start the timer
+                timerStarted = true; // Mark that the timer is running
+
+                await fetch('https://a2f-back.onrender.com/send-text', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
