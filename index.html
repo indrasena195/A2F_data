@@ -8,7 +8,7 @@
         #messages {
             border: 1px solid #ddd;
             padding: 10px;
-            max-height: 80vh; /* Adjusted for better visibility */
+            max-height: 80vh; 
             overflow-y: auto;
             white-space: pre-wrap;
         }
@@ -21,8 +21,9 @@
                 <h1>User Text</h1>
             </div>
             <div class="interaction-container">
-                <textarea id="textTosend" id="" cols="35" rows="2" class="text-control" placeholder="Enter the Text"></textarea>
+                <textarea id="textTosend" cols="35" rows="2" class="text-control" placeholder="Enter the Text"></textarea>
                 <p class="error-para"></p>
+                <audio id="audioPlayer" controls></audio>
                 <button class="btn" id="convertBtn">
                     Click for Response
                 </button>
@@ -33,60 +34,123 @@
     <div id="messages">Blendshape data</div>
     <script type="module">
         let ws;
-        let messageBuffer = []; // Buffer to store incoming messages
-        let counter =0;
-        let timerStarted = false;
+        let messageQueue = []; // Queue for animation data
+        let audioQueue = []; // Queue for audio chunks
+        let isPlaying = false;
+        let audioElement = document.getElementById("audioPlayer");
 
         function connect() {
-            ws = new WebSocket('https://a2f-back.onrender.com');
+            ws = new WebSocket('ws://localhost:2000');
 
-            ws.onopen = () => {
-                console.log('WebSocket connection opened.');
-            };
+            ws.onopen = () => console.log('WebSocket connection opened.');
 
-            ws.onmessage = (event) => {
-                if (timerStarted) {
-                    console.timeEnd('Time from send to receive'); // Stop and log the timer
-                    timerStarted = false; // Reset the timer flag
+            const messagesDiv = document.getElementById('messages');
+            messagesDiv.innerHTML = "";
+
+            ws.onmessage = async (event) => {
+                if (event.data instanceof Blob) {
+                    let chunk = await event.data.arrayBuffer();
+                    audioQueue.push(chunk);
+                } else {
+                    // console.log('recevied anidata', event.data)
+                    messageQueue.push(event.data);
+                    updateDisplay(event.data); 
                 }
-                // console.timeEnd('Time to receive data'); // Stop the timer and log the time taken
-                // console.log('Message from server:', event.data);
-                // ws.close();
-                bufferMessage(event.data);
-                // console.time('Time to receive data'); // Restart the timer for the next message
+
+                // Try to process if both audio & animation are available
+                processQueues();
             };
 
             ws.onclose = () => {
-                console.log('WebSocket connection closed. Reconnecting in 1 second...');
-                setTimeout(connect, 1000); 
+                console.log('WebSocket closed. Reconnecting...');
+                setTimeout(connect, 1000);
             };
 
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-            };
+            ws.onerror = (error) => console.error('WebSocket error:', error);
         }
 
-        function bufferMessage(message) {
-            messageBuffer.push(message); // Add new message to the buffer
-            updateDisplay(); // Update display with buffered messages
-        }
+        function processQueues() {
+            if (audioQueue.length > 0 && messageQueue.length > 0 && !isPlaying) {
+                isPlaying = true;
+                let animationData = messageQueue.shift();
+                let audioChunks = audioQueue.splice(0, audioQueue.length); // Get all audio chunks
 
-        function updateDisplay() {
+                updateDisplay(animationData);
+                playAudio(audioChunks, () => {
+                    isPlaying = false; 
+                    processQueues(); // Check for more data after playing
+                });
+            }
+        }
+        function updateDisplay(message) {
             const messagesDiv = document.getElementById('messages');
-            messagesDiv.innerHTML = ''; // Clear the current display
-
-            // Display all messages from the buffer
-            messageBuffer.forEach((message) => {
-                const messageElement = document.createElement('div');
-                messageElement.textContent = message;
-                messagesDiv.appendChild(messageElement);
-            });
-
-            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll to the bottom
+            const messageElement = document.createElement('div');
+            messageElement.textContent = message;
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Auto-scroll to latest message
         }
-        // Start connection
+
+        function playAudio(chunks, onComplete) {
+            let pcmData = mergeChunks(chunks);
+            let wavData = convertPCMtoWAV(pcmData);
+            let blob = new Blob([wavData], { type: "audio/wav" });
+            let url = URL.createObjectURL(blob);
+
+            audioElement.src = url;
+            audioElement.play().then(() => {
+                console.log("Playing audio...");
+                audioElement.onended = onComplete;
+            }).catch(err => {
+                console.error("Playback error:", err);
+                onComplete();
+            });
+        }
+
+        function mergeChunks(chunks) {
+            let totalLength = chunks.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+            let mergedArray = new Uint8Array(totalLength);
+            let offset = 0;
+            chunks.forEach(chunk => {
+                mergedArray.set(new Uint8Array(chunk), offset);
+                offset += chunk.byteLength;
+            });
+            return mergedArray.buffer;
+        }
+
+        function convertPCMtoWAV(pcmData) {
+            const sampleRate = 44100;
+            const numChannels = 1;
+            const bitsPerSample = 16;
+            const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+
+            const wavHeader = new ArrayBuffer(44);
+            const view = new DataView(wavHeader);
+
+            writeString(view, 0, "RIFF");
+            view.setUint32(4, 36 + pcmData.byteLength, true);
+            writeString(view, 8, "WAVE");
+            writeString(view, 12, "fmt ");
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, numChannels * (bitsPerSample / 8), true);
+            view.setUint16(34, bitsPerSample, true);
+            writeString(view, 36, "data");
+            view.setUint32(40, pcmData.byteLength, true);
+
+            return new Blob([wavHeader, pcmData], { type: "audio/wav" });
+        }
+
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
         connect();
-        // console.time('Time to receive data'); // Start the initial timer
+        console.time('Time to receive data'); // Start the initial timer
 
          // Sending text logic
          document.getElementById('convertBtn').addEventListener('click', async () => {
@@ -100,11 +164,14 @@
 
             errorDisplay.textContent = ""; // Clear error message
 
+            // Clear messages div before sending a new request
+            document.getElementById('messages').innerHTML = "";
+
             try {
                 console.time('Time from send to receive'); // Start the timer
-                timerStarted = true; // Mark that the timer is running
+                // timerStarted = true; // Mark that the timer is running
 
-                await fetch('https://a2f-back.onrender.com/send-text', {
+                await fetch('http://localhost:2000/send-text', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -121,6 +188,8 @@
             }
 
             textTosend.value = "";
+            messageQueue = [];
+            audioQueue = [];
         });
     </script>
 </body>
