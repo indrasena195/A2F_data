@@ -40,7 +40,7 @@
         let audioElement = document.getElementById("audioPlayer");
 
         function connect() {
-            ws = new WebSocket('ws://localhost:2000');
+            ws = new WebSocket('https://a2f-back-ah6r.onrender.com');
 
             ws.onopen = () => console.log('WebSocket connection opened.');
 
@@ -171,7 +171,7 @@
                 console.time('Time from send to receive'); // Start the timer
                 // timerStarted = true; // Mark that the timer is running
 
-                await fetch('http://localhost:2000/send-text', {
+                await fetch('https://a2f-back-ah6r.onrender.com/send-text', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
